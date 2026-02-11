@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "clean:dist": "rm -rf dist/*",
+    "prestart": "npm run clean:dist",
     "start": "parcel index.html --open",
+    "prebuild": "npm run clean:dist",
     "build": "parcel build index.html --public-url https://soswow.github.io/lune-gore-svg-generator/js/dist"
   },
   "dependencies": {

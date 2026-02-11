@@ -4,7 +4,19 @@ Play online: https://soswow.github.io/lune-gore-svg-generator/
 
 This project is a browser-based TypeScript app that generates SVG globe gores (lunes).
 
-![Web interface screenshot](docs/images/web-interface-screenshot.jpg)
+## Layout examples
+
+`flower`: gores are arranged radially like petals and touch at one shared tip point.
+
+![Flower pattern screenshot](docs/images/flower-pattern-screenshot.jpg)
+
+`orange-peel`: gores are chained with alternating tilt and alternating tip-touch points.
+
+![Orange-peel pattern screenshot](docs/images/orange-peel-pattern-screenshot.jpg)
+
+`side-by-side`: gores are laid out in a linear strip for straightforward cutting/alignment.
+
+![Side-by-side pattern screenshot](docs/images/side-by-side-pattern-screenshot.jpg)
 
 ## Project structure
 
@@ -35,13 +47,13 @@ Configured scripts in `js/package.json`:
 
 ```json
 {
+  "clean:dist": "rm -rf dist/*",
+  "prestart": "npm run clean:dist",
   "start": "parcel index.html --open",
-  "build": "parcel build index.html --public-url https://soswow.github.io/lune-gore-svg-generator/js",
-  "postbuild": "cp dist/*.js dist/*.js.map ."
+  "prebuild": "npm run clean:dist",
+  "build": "parcel build index.html --public-url https://soswow.github.io/lune-gore-svg-generator/js/dist"
 }
 ```
-
-`postbuild` copies Parcel bundles to `js/` so `js/dist/index.html` can resolve assets on GitHub Pages with the requested `--public-url`.
 
 ## GUI controls
 
@@ -49,7 +61,7 @@ The `dat.gui` panel exposes the same generator options:
 
 - `diameter`
 - `gores`
-- `full-sphere`: `single`, `side-by-side`, `flower`
+- `full-sphere`: `single`, `side-by-side`, `flower`, `orange-peel`
 - `scale-x-mm`
 - `scale-y-mm`
 - `lat-max` (`0..90`, with lower bound fixed at `-90`)

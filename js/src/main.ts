@@ -1,7 +1,7 @@
 import * as dat from "dat.gui";
 
 type Point = [number, number];
-type FullSphereMode = "single" | "side-by-side" | "flower";
+type FullSphereMode = "single" | "side-by-side" | "flower" | "orange-peel";
 
 interface ControlsState {
   diameter: number;
@@ -65,7 +65,9 @@ function loadStateFromStorage(): Partial<ControlsState> {
     const parsed = JSON.parse(raw) as Partial<Record<keyof ControlsState, unknown>>;
     const mode = parsed.fullSphere;
     const fullSphere: FullSphereMode =
-      mode === "single" || mode === "side-by-side" || mode === "flower" ? mode : defaults.fullSphere;
+      mode === "single" || mode === "side-by-side" || mode === "flower" || mode === "orange-peel"
+        ? mode
+        : defaults.fullSphere;
 
     return {
       diameter: clampNumber(parsed.diameter, 1, 2000, defaults.diameter),
@@ -204,6 +206,14 @@ function rotatePoint(x: number, y: number, pivotX: number, pivotY: number, angle
   return [pivotX + dx * cosA - dy * sinA, pivotY + dx * sinA + dy * cosA];
 }
 
+function orangePeelTiltRad(gores: number): number {
+  // Near a pole, gore half-width slope is approximately pi/gores.
+  // Matching tilt to this slope yields near point-contact at tips instead of broad overlap.
+  // Keep this independent from x/y scaling so scale controls only overlap/fit, not layout angle.
+  const slope = PI / gores;
+  return Math.atan(slope);
+}
+
 function gorePolygonPoints(
   radius: number,
   gores: number,
@@ -314,6 +324,41 @@ function buildSvg(cfg: ControlsState): BuildResult {
       }
       polygons.push(rotated);
     }
+  } else if (cfg.fullSphere === "orange-peel") {
+    const yPoleMin = radius * ((-90 * PI) / 180);
+    const yPoleMax = radius * ((90 * PI) / 180);
+    // Keep orange-peel chaining anchored to full-sphere tips so lat-max
+    // only trims shape, not the contact geometry between neighboring gores.
+    const topBase = transformPoint(0, yPoleMin, cx, cy, sx, sy, 0, 0);
+    const bottomBase = transformPoint(0, yPoleMax, cx, cy, sx, sy, 0, 0);
+    const pivotX = 0.5 * (topBase[0] + bottomBase[0]);
+    const pivotY = 0.5 * (topBase[1] + bottomBase[1]);
+    const tiltRad = orangePeelTiltRad(gores);
+
+    type PlacedGore = { top: Point; bottom: Point };
+    const placedAnchors: PlacedGore[] = [];
+
+    for (let i = 0; i < gores; i += 1) {
+      const angle = (i % 2 === 0 ? -1 : 1) * tiltRad;
+      let rotated = basePoints.map(([x, y]) => rotatePoint(x, y, pivotX, pivotY, angle));
+      let top = rotatePoint(topBase[0], topBase[1], pivotX, pivotY, angle);
+      let bottom = rotatePoint(bottomBase[0], bottomBase[1], pivotX, pivotY, angle);
+
+      if (i > 0) {
+        const anchorType = i % 2 === 1 ? "bottom" : "top";
+        const prev = placedAnchors[i - 1];
+        const target = prev[anchorType];
+        const source = anchorType === "bottom" ? bottom : top;
+        const dx = target[0] - source[0];
+        const dy = target[1] - source[1];
+        rotated = rotated.map(([x, y]) => [x + dx, y + dy]);
+        top = [top[0] + dx, top[1] + dy];
+        bottom = [bottom[0] + dx, bottom[1] + dy];
+      }
+
+      polygons.push(rotated);
+      placedAnchors.push({ top, bottom });
+    }
   } else {
     polygons.push(basePoints);
   }
@@ -409,12 +454,13 @@ const fullSphereController = gui
     single: "single",
     "side-by-side": "side-by-side",
     flower: "flower",
+    "orange-peel": "orange-peel",
   })
   .name("full-sphere")
   .onChange(render);
 setControllerHint(
   fullSphereController,
-  "Layout mode: single = one gore, side-by-side = all gores in a strip, flower = radial petals touching at one point.",
+  "Layout mode: single = one gore, side-by-side = all gores in a strip, flower = radial petals touching at one point, orange-peel = alternating tilted chain touching at alternating tips (tilt depends on gores only).",
 );
 
 const scaleXController = gui.add(state, "scaleXMm", -50, 50, 0.1).name("scale-x-mm").onChange(render);
