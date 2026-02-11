@@ -13,7 +13,7 @@ import argparse
 import math
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 Point = Tuple[float, float]
@@ -85,6 +85,27 @@ def transform_point(x: float, y: float, cx: float, cy: float, sx: float, sy: flo
     )
 
 
+def rotate_point(x: float, y: float, pivot_x: float, pivot_y: float, angle_rad: float) -> Point:
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+    dx = x - pivot_x
+    dy = y - pivot_y
+    return (
+        pivot_x + dx * cos_a - dy * sin_a,
+        pivot_y + dx * sin_a + dy * cos_a,
+    )
+
+
+def lat_max_type(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--lat-max must be a number") from exc
+    if parsed < 0.0 or parsed > 90.0:
+        raise argparse.ArgumentTypeError("--lat-max must be in range [0, 90]")
+    return parsed
+
+
 def sanitize_token(text: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
     return cleaned or "x"
@@ -119,7 +140,7 @@ def auto_output_path(args: argparse.Namespace, defaults: Dict[str, object]) -> P
     return Path("_".join(parts) + ".svg")
 
 
-def gore_polyline_path(
+def gore_polygon_points(
     radius: float,
     gores: int,
     lat_min: float,
@@ -129,9 +150,7 @@ def gore_polyline_path(
     cy: float,
     sx: float,
     sy: float,
-    tx: float,
-    ty: float,
-) -> str:
+) -> List[Point]:
     if segments < 1:
         raise ValueError("samples must be >= 1")
 
@@ -144,36 +163,40 @@ def gore_polyline_path(
     x_top = half_width_at_lat(radius, delta_lambda, lat_min)
     x_bottom = half_width_at_lat(radius, delta_lambda, lat_max)
 
-    # Start at visual top-left.
-    x_start_t, y_start_t = transform_point(-x_top, y_top, cx=cx, cy=cy, sx=sx, sy=sy, tx=tx, ty=ty)
-    parts = [f"M {x_start_t:.6f} {y_start_t:.6f}"]
+    points: List[Point] = []
 
     # Top cap: top-left -> top-right when width is non-zero.
+    points.append(transform_point(-x_top, y_top, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0))
     if x_top > 1e-12:
-        x_tr_t, y_tr_t = transform_point(x_top, y_top, cx=cx, cy=cy, sx=sx, sy=sy, tx=tx, ty=ty)
-        parts.append(f"L {x_tr_t:.6f} {y_tr_t:.6f}")
+        points.append(transform_point(x_top, y_top, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0))
 
     # Right edge: top -> bottom.
     for i in range(segments):
         lat = lat_min + dlat * (i + 1)
         x = half_width_at_lat(radius, delta_lambda, lat)
         y = radius * lat
-        xt, yt = transform_point(x, y, cx=cx, cy=cy, sx=sx, sy=sy, tx=tx, ty=ty)
-        parts.append(f"L {xt:.6f} {yt:.6f}")
+        points.append(transform_point(x, y, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0))
 
     # Bottom cap: bottom-right -> bottom-left when width is non-zero.
     if x_bottom > 1e-12:
-        x_bl_t, y_bl_t = transform_point(-x_bottom, y_bottom, cx=cx, cy=cy, sx=sx, sy=sy, tx=tx, ty=ty)
-        parts.append(f"L {x_bl_t:.6f} {y_bl_t:.6f}")
+        points.append(transform_point(-x_bottom, y_bottom, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0))
 
     # Left edge: bottom -> top.
     for i in range(segments):
         lat = lat_max - dlat * (i + 1)
         x = -half_width_at_lat(radius, delta_lambda, lat)
         y = radius * lat
-        xt, yt = transform_point(x, y, cx=cx, cy=cy, sx=sx, sy=sy, tx=tx, ty=ty)
-        parts.append(f"L {xt:.6f} {yt:.6f}")
+        points.append(transform_point(x, y, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0))
 
+    return points
+
+
+def polygon_to_path(points: List[Point]) -> str:
+    if not points:
+        raise ValueError("polygon must contain at least one point")
+    parts = [f"M {points[0][0]:.6f} {points[0][1]:.6f}"]
+    for x, y in points[1:]:
+        parts.append(f"L {x:.6f} {y:.6f}")
     parts.append("Z")
     return " ".join(parts)
 
@@ -184,12 +207,10 @@ def build_svg(
     lat_min: float,
     lat_max: float,
     samples: int,
-    count: int,
+    full_sphere: Optional[str],
     scale_x_mm: float,
     scale_y_mm: float,
-) -> str:
-    if count < 1:
-        raise ValueError("count must be >= 1")
+) -> Tuple[str, float, float, int, Optional[float]]:
 
     min_x, min_y, max_x, max_y = gore_bounds(
         radius=radius,
@@ -203,39 +224,70 @@ def build_svg(
     cx = 0.5 * (min_x + max_x)
     cy = 0.5 * (min_y + max_y)
 
-    scaled_min_x = cx + (min_x - cx) * sx
-    scaled_max_x = cx + (max_x - cx) * sx
-    scaled_min_y = cy + (min_y - cy) * sy
-    scaled_max_y = cy + (max_y - cy) * sy
+    base_points = gore_polygon_points(
+        radius=radius,
+        gores=gores,
+        lat_min=lat_min,
+        lat_max=lat_max,
+        segments=samples,
+        cx=cx,
+        cy=cy,
+        sx=sx,
+        sy=sy,
+    )
 
-    step_x = base_width
-    x_offsets = [i * step_x for i in range(count)]
-    global_min_x = min((scaled_min_x + ox) for ox in x_offsets)
-    global_max_x = max((scaled_max_x + ox) for ox in x_offsets)
-    global_min_y = scaled_min_y
-    global_max_y = scaled_max_y
+    polygons: List[List[Point]] = []
+    layout_count = 1
+    layout_step_x: Optional[float] = None
 
+    if full_sphere == "side-by-side":
+        layout_count = gores
+        layout_step_x = base_width
+        for i in range(layout_count):
+            ox = i * layout_step_x
+            polygons.append([(x + ox, y) for x, y in base_points])
+    elif full_sphere == "flower":
+        layout_count = gores
+        y_top = radius * lat_min
+        y_bottom = radius * lat_max
+        # Keep flower rotation center stable vs. --scale-y-mm by anchoring it
+        # to the unscaled top tip location.
+        pivot_x, pivot_y = transform_point(0.0, y_top, cx=cx, cy=cy, sx=sx, sy=1.0, tx=0.0, ty=0.0)
+        outer_base_x, outer_base_y = transform_point(0.0, y_bottom, cx=cx, cy=cy, sx=sx, sy=1.0, tx=0.0, ty=0.0)
+        outer_scaled_x, outer_scaled_y = transform_point(0.0, y_bottom, cx=cx, cy=cy, sx=sx, sy=sy, tx=0.0, ty=0.0)
+        base_radius = math.hypot(outer_base_x - pivot_x, outer_base_y - pivot_y)
+        scaled_radius = math.hypot(outer_scaled_x - pivot_x, outer_scaled_y - pivot_y)
+        inset_radius = scaled_radius - base_radius
+
+        angle_step = 2.0 * math.pi / gores
+        for i in range(layout_count):
+            angle = i * angle_step
+            rotated_poly = [rotate_point(x, y, pivot_x, pivot_y, angle) for x, y in base_points]
+            if abs(inset_radius) > 1e-12:
+                outer_rot_x, outer_rot_y = rotate_point(outer_scaled_x, outer_scaled_y, pivot_x, pivot_y, angle)
+                dir_x = outer_rot_x - pivot_x
+                dir_y = outer_rot_y - pivot_y
+                norm = math.hypot(dir_x, dir_y)
+                if norm > 1e-12:
+                    shift_x = -inset_radius * (dir_x / norm)
+                    shift_y = -inset_radius * (dir_y / norm)
+                    rotated_poly = [(x + shift_x, y + shift_y) for x, y in rotated_poly]
+            polygons.append(rotated_poly)
+    else:
+        polygons.append(base_points)
+
+    all_points = [pt for poly in polygons for pt in poly]
+    global_min_x = min(x for x, _ in all_points)
+    global_max_x = max(x for x, _ in all_points)
+    global_min_y = min(y for _, y in all_points)
+    global_max_y = max(y for _, y in all_points)
     width = global_max_x - global_min_x
     height = global_max_y - global_min_y
 
     path_elements: List[str] = []
-
-    for ox in x_offsets:
-        tx = -global_min_x + ox
-        ty = -global_min_y
-        d = gore_polyline_path(
-            radius=radius,
-            gores=gores,
-            lat_min=lat_min,
-            lat_max=lat_max,
-            segments=samples,
-            cx=cx,
-            cy=cy,
-            sx=sx,
-            sy=sy,
-            tx=tx,
-            ty=ty,
-        )
+    for poly in polygons:
+        shifted_poly = [(x - global_min_x, y - global_min_y) for x, y in poly]
+        d = polygon_to_path(shifted_poly)
         path_elements.append(
             f'<path d="{d}" fill="{DEFAULT_FILL}" fill-opacity="{DEFAULT_FILL_OPACITY:.3f}" '
             f'stroke="{DEFAULT_STROKE}" stroke-width="{DEFAULT_STROKE_WIDTH_MM:.6f}" />'
@@ -251,27 +303,26 @@ def build_svg(
         f"{body}"
         "</svg>\n"
     )
-    return svg
+    return svg, width, height, layout_count, layout_step_x
 
 
 def parse_args() -> Tuple[argparse.Namespace, Dict[str, object]]:
     p = argparse.ArgumentParser(description="Generate an SVG globe gore (lune).")
     p.add_argument("--diameter", type=float, default=200.0, help="Sphere diameter in mm.")
     p.add_argument("--gores", type=int, default=12, help="Number of gores to cover the sphere.")
-    p.add_argument("--count", type=int, default=1, help="Number of peels laid out side by side.")
+    p.add_argument(
+        "--full-sphere",
+        choices=("side-by-side", "flower"),
+        default=None,
+        help="Generate all gores for full coverage, laid out side-by-side or as a radial flower.",
+    )
     p.add_argument("--scale-x-mm", type=float, default=0.0, help="Additive width change per peel in mm.")
     p.add_argument("--scale-y-mm", type=float, default=0.0, help="Additive height change per peel in mm.")
     p.add_argument(
-        "--lat-min",
-        type=float,
-        default=-90.0,
-        help="Minimum latitude in degrees (default: -90).",
-    )
-    p.add_argument(
         "--lat-max",
-        type=float,
+        type=lat_max_type,
         default=90.0,
-        help="Maximum latitude in degrees (default: 90).",
+        help="Maximum latitude in degrees in range [0, 90] with minimum fixed at -90 (default: 90).",
     )
     p.add_argument("--samples", type=int, default=24, help="Number of line segments per edge.")
     p.add_argument(
@@ -288,14 +339,12 @@ def parse_args() -> Tuple[argparse.Namespace, Dict[str, object]]:
 
 def main() -> None:
     args, defaults = parse_args()
-    if args.count < 1:
-        raise ValueError("count must be >= 1")
     if args.output is None:
         args.output = auto_output_path(args, defaults)
 
     radius = args.diameter * 0.5
 
-    lat_min = math.radians(args.lat_min)
+    lat_min = math.radians(-90.0)
     lat_max = math.radians(args.lat_max)
 
     min_x, min_y, max_x, max_y = gore_bounds(
@@ -316,22 +365,13 @@ def main() -> None:
     scaled_lune_width = scaled_max_x - scaled_min_x
     scaled_lune_height = scaled_max_y - scaled_min_y
 
-    step_x = base_lune_width
-    x_offsets = [i * step_x for i in range(args.count)]
-    global_min_x = min((scaled_min_x + ox) for ox in x_offsets)
-    global_max_x = max((scaled_max_x + ox) for ox in x_offsets)
-    layout_width = global_max_x - global_min_x
-    layout_height = scaled_lune_height
-    canvas_width = layout_width
-    canvas_height = layout_height
-
-    svg = build_svg(
+    svg, canvas_width, canvas_height, layout_count, layout_step_x = build_svg(
         radius=radius,
         gores=args.gores,
         lat_min=lat_min,
         lat_max=lat_max,
         samples=args.samples,
-        count=args.count,
+        full_sphere=args.full_sphere,
         scale_x_mm=args.scale_x_mm,
         scale_y_mm=args.scale_y_mm,
     )
@@ -341,8 +381,12 @@ def main() -> None:
     print(f"Sphere diameter: {args.diameter:.3f} mm")
     print(f"Single peel (base):   {base_lune_width:.3f} x {base_lune_height:.3f} mm")
     print(f"Single peel (scaled): {scaled_lune_width:.3f} x {scaled_lune_height:.3f} mm")
-    print(f"Layout: count={args.count}, step_x={step_x:.3f} mm")
-    print(f"Layout size: {layout_width:.3f} x {layout_height:.3f} mm")
+    if args.full_sphere == "side-by-side":
+        print(f"Layout: full-sphere=side-by-side, count={layout_count}, step_x={layout_step_x:.3f} mm")
+    elif args.full_sphere == "flower":
+        print(f"Layout: full-sphere=flower, count={layout_count}")
+    else:
+        print("Layout: single peel")
     print(f"SVG canvas:  {canvas_width:.3f} x {canvas_height:.3f} mm")
 
 

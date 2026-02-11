@@ -7,12 +7,12 @@ The outline is based on a common globe-gore approximation: distances along the m
 ## Usage example
 
 ```sh
-python3 lune_svg.py  --diameter 20.5 --gores 8 --samples 40 --count 8 --scale-x-mm 0.3 --lat-min -80
+python3 lune_svg.py --diameter 20.5 --gores 8 --samples 40 --full-sphere side-by-side --scale-x-mm 0.3 --lat-max 80
 ```
 
-This command generates an SVG strip with **8 globe-gores** (`--count 8`) sized for a sphere of **20.5 mm diameter** (`--diameter 20.5`) split into **8 total gores around the ball** (`--gores 8`).
-Each gore is sampled with 40 segments per edge (`--samples 40`), starts at latitude **-80 deg** (`--lat-min -80`), and gets progressively wider by **+0.3 mm per peel** (`--scale-x-mm 0.3`) to help with fit tuning.  
-Because no `-o/--output` is provided, the script writes an auto-named file like `lune_diameter-20p5_gores-8_count-8_scale-x-mm-0p3_lat-min-m80_samples-40.svg`
+This command generates an SVG strip with **all 8 globe-gores** (via `--full-sphere side-by-side`) sized for a sphere of **20.5 mm diameter** (`--diameter 20.5`) split into **8 total gores around the ball** (`--gores 8`).
+Each gore is sampled with 40 segments per edge (`--samples 40`), spans from **-90 deg to +80 deg** (`--lat-max 80`), and gets progressively wider by **+0.3 mm per peel** (`--scale-x-mm 0.3`) to help with fit tuning.  
+Because no `-o/--output` is provided, the script writes an auto-named file like `lune_diameter-20p5_gores-8_full-sphere-side-by-side_scale-x-mm-0p3_lat-max-80_samples-40.svg`
 
 Resulting SVG will look like this:
 
@@ -33,10 +33,13 @@ If `-o/--output` is omitted, the file name is auto-generated from non-default pa
 
 - `--diameter`: sphere diameter in mm
 - `--gores`: number of lunes to cover the sphere
-- `--count`: number of peels laid out side by side
+- `--full-sphere`: optional layout for generating all gores:
+  - `side-by-side`: same as old behavior with `--count == --gores`
+  - `flower`: all gores arranged radially like petals, touching at one shared center point
+  - In `flower` mode, `--scale-y-mm` preserves the reference outer circle size (petals shift radially inward/outward instead of changing that circle diameter)
 - `--scale-x-mm`: additive width change per peel in mm
 - `--scale-y-mm`: additive height change per peel in mm
-- `--lat-min` / `--lat-max`: latitude range in degrees (default: full sphere)
+- `--lat-max`: maximum latitude in degrees (`0` to `90`, default `90`), with minimum fixed at `-90` (range is `[-90, +lat-max]`)
 - `--samples`: number of line segments per edge (lower = fewer nodes)
 - `-o` / `--output`: output filename (optional; auto-generated when omitted)
 
