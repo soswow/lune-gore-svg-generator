@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lune Gore SVG Generator</title>
+    <script>
+      (function () {
+        var host = window.location.hostname;
+        var isLocal =
+          host === "localhost" ||
+          host === "127.0.0.1" ||
+          host === "::1" ||
+          host === "";
+        var target = isLocal ? "./js/index.html" : "./js/dist/index.html";
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    <p>
+      Redirecting...
+      <a href="./js/index.html">Dev app</a> |
+      <a href="./js/dist/index.html">Built app</a>
+    </p>
+  </body>
+</html>

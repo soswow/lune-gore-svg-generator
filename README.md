@@ -1,50 +1,60 @@
-# Globe Lune (Gore) SVG Generator
+# Lune Gore SVG Generator (Web)
 
-This is a small Python utility that generates an SVG outline for a spherical **lune / globe gore**. A gore is a “peel” bounded by two meridians that you can repeat to cover a sphere.
+Play online: https://soswow.github.io/lune-gore-svg-generator/
 
-The outline is based on a common globe-gore approximation: distances along the meridian are preserved, and the width at each latitude equals the spherical arc between meridians. This yields a sinusoidal edge (useful for paper or vinyl sphere coverings).
+This project is a browser-based TypeScript app that generates SVG globe gores (lunes).
 
-## Usage example
+![Web interface screenshot](docs/images/web-interface-screenshot.jpg)
+
+## Project structure
+
+- `index.html`: root page (redirects to built app in `js/dist/index.html`)
+- `js/index.html`: Parcel entry HTML
+- `js/src/main.ts`: TypeScript source
+- `js/dist/`: build output folder
+- `js/package.json`: dependencies and scripts
+
+## Development
 
 ```sh
-python3 lune_svg.py --diameter 20.5 --gores 8 --samples 40 --full-sphere side-by-side --scale-x-mm 0.3 --lat-max 80
+cd js
+npm install
+npm run start
 ```
 
-This command generates an SVG strip with **all 8 globe-gores** (via `--full-sphere side-by-side`) sized for a sphere of **20.5 mm diameter** (`--diameter 20.5`) split into **8 total gores around the ball** (`--gores 8`).
-Each gore is sampled with 40 segments per edge (`--samples 40`), spans from **-90 deg to +80 deg** (`--lat-max 80`), and gets progressively wider by **+0.3 mm per peel** (`--scale-x-mm 0.3`) to help with fit tuning.  
-Because no `-o/--output` is provided, the script writes an auto-named file like `lune_diameter-20p5_gores-8_full-sphere-side-by-side_scale-x-mm-0p3_lat-max-80_samples-40.svg`
+This uses Parcel dev server and opens the app in your browser.
 
-Resulting SVG will look like this:
+## Build
 
-![Generated SVG result](docs/images/svg-result.jpg)
+```sh
+cd js
+npm run build
+```
 
-Then it can be applied on a ball:
+Configured scripts in `js/package.json`:
 
-<p align="center">
-  <img src="docs/images/lunes-application.jpg" alt="Lunes application process" width="32%">
-  <img src="docs/images/lunes-applied.jpg" alt="Lunes applied on the ball" width="32%">
-  <img src="docs/images/laser-cutted-lunes.jpg" alt="Laser-cut lunes" width="32%">
-</p>
+```json
+{
+  "start": "parcel index.html --open",
+  "build": "parcel build index.html --public-url https://soswow.github.io/lune-gore-svg-generator/js",
+  "postbuild": "cp dist/*.js dist/*.js.map ."
+}
+```
 
+`postbuild` copies Parcel bundles to `js/` so `js/dist/index.html` can resolve assets on GitHub Pages with the requested `--public-url`.
 
-If `-o/--output` is omitted, the file name is auto-generated from non-default parameters.
+## GUI controls
 
-### Useful options
+The `dat.gui` panel exposes the same generator options:
 
-- `--diameter`: sphere diameter in mm
-- `--gores`: number of lunes to cover the sphere
-- `--full-sphere`: optional layout for generating all gores:
-  - `side-by-side`: same as old behavior with `--count == --gores`
-  - `flower`: all gores arranged radially like petals, touching at one shared center point
-  - In `flower` mode, `--scale-y-mm` preserves the reference outer circle size (petals shift radially inward/outward instead of changing that circle diameter)
-- `--scale-x-mm`: additive width change per peel in mm
-- `--scale-y-mm`: additive height change per peel in mm
-- `--lat-max`: maximum latitude in degrees (`0` to `90`, default `90`), with minimum fixed at `-90` (range is `[-90, +lat-max]`)
-- `--samples`: number of line segments per edge (lower = fewer nodes)
-- `-o` / `--output`: output filename (optional; auto-generated when omitted)
+- `diameter`
+- `gores`
+- `full-sphere`: `single`, `side-by-side`, `flower`
+- `scale-x-mm`
+- `scale-y-mm`
+- `lat-max` (`0..90`, with lower bound fixed at `-90`)
+- `samples`
 
-Note: output style is fixed to filled black at 50% opacity, with no stroke.
+`Download SVG` exports the current result.
 
-## Notes
-
-- The sphere cannot be flattened without distortion; this is the standard globe-gore approximation used for paper globes and similar coverings.
+`flower` mode behavior: when `scale-y-mm` changes, petals are shifted radially so the reference outer circle remains the same size.
